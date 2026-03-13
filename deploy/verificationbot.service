@@ -1,0 +1,24 @@
+[Unit]
+Description=VerificationBot Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=verificationbot
+WorkingDirectory=/opt/verificationbot
+EnvironmentFile=/opt/verificationbot/.env
+ExecStart=/opt/verificationbot/bot
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/verificationbot
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

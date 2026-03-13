@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>登入 — VerificationBot Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/admin/assets/style.css"/>
+<style>
+body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg)}
+.login-card{width:100%;max-width:400px;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:40px 36px;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:fadeUp .4s ease}
+.brand{text-align:center;margin-bottom:32px}
+.brand-icon{font-size:2.5rem;margin-bottom:8px}
+.brand h1{font-size:1.4rem;font-weight:700;color:var(--text);margin:0 0 4px}
+.brand p{color:var(--muted);font-size:.875rem}
+label{display:block;font-size:.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+input[type=text],input[type=password]{width:100%;padding:12px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-size:.95rem;font-family:inherit;outline:none;transition:border-color .2s,box-shadow .2s;box-sizing:border-box}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(46,166,255,.15)}
+.field{margin-bottom:18px}
+.btn-primary{width:100%;padding:13px;background:var(--accent);border:none;border-radius:10px;color:#fff;font-size:.95rem;font-weight:600;cursor:pointer;transition:filter .2s,transform .1s;font-family:inherit;margin-top:6px}
+.btn-primary:hover{filter:brightness(1.1)}
+.btn-primary:active{transform:scale(.98)}
+.error{display:none;background:rgba(248,81,73,.12);border:1px solid rgba(248,81,73,.3);color:#f85149;padding:10px 14px;border-radius:8px;font-size:.875rem;margin-bottom:16px}
+</style>
+</head>
+<body>
+<div class="login-card">
+  <div class="brand">
+    <div class="brand-icon" id="logo-placeholder">🤖</div>
+    <h1 id="site-title">Admin Panel</h1>
+    <p>VerificationBot 管理後台</p>
+  </div>
+  <div class="error" id="err-msg"></div>
+  <div class="field"><label>帳號</label><input id="username" type="text" placeholder="admin" autocomplete="username"/></div>
+  <div class="field"><label>密碼</label><input id="password" type="password" placeholder="••••••••" autocomplete="current-password"/></div>
+  <button class="btn-primary" id="loginBtn" onclick="doLogin()">登入</button>
+</div>
+<script>
+async function doLogin(){
+  const btn=document.getElementById('loginBtn');
+  const errEl=document.getElementById('err-msg');
+  btn.textContent='登入中…'; btn.disabled=true; errEl.style.display='none';
+  try{
+    const res=await fetch('/admin/api/auth/login',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username:document.getElementById('username').value,password:document.getElementById('password').value})
+    });
+    const data=await res.json();
+    if(!res.ok){errEl.textContent=data.error||'登入失敗';errEl.style.display='block';}
+    else{localStorage.setItem('token',data.token);localStorage.setItem('role',data.role);window.location='/admin/';}
+  }catch(e){errEl.textContent='網路錯誤，請重試';errEl.style.display='block';}
+  btn.textContent='登入'; btn.disabled=false;
+}
+document.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+// Load branding
+fetch('/admin/api/settings').then(r=>r.json()).then(s=>{
+  if(s.site_name)document.getElementById('site-title').textContent=s.site_name;
+  if(s.site_logo)document.getElementById('logo-placeholder').innerHTML=`<img src="${s.site_logo}" style="height:48px;border-radius:8px"/>`;
+  if(s.primary_color)document.documentElement.style.setProperty('--accent',s.primary_color);
+}).catch(()=>{});
+</script>
+</body>
+</html>

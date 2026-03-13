@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>身份驗證</title>
+  <!-- Telegram Mini App SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="card">
+    <div class="icon">🛡️</div>
+    <h1>身份驗證</h1>
+    <p class="subtitle">請完成下方驗證以繼續</p>
+    <div id="captcha-wrapper"></div>
+    <p id="status-msg" class="status hidden"></p>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    // Apply Telegram theme
+    document.documentElement.style.setProperty('--tg-bg',     tg.themeParams.bg_color     || '#17212b');
+    document.documentElement.style.setProperty('--tg-text',   tg.themeParams.text_color   || '#ffffff');
+    document.documentElement.style.setProperty('--tg-hint',   tg.themeParams.hint_color   || '#708499');
+    document.documentElement.style.setProperty('--tg-button', tg.themeParams.button_color || '#2ea6ff');
+
+    const params  = new URLSearchParams(window.location.search);
+    const siteKey = params.get('site_key');
+    const type    = params.get('type') || 'recaptcha'; // 'recaptcha' | 'turnstile'
+
+    function onVerified(token) {
+      showStatus('✅ 驗證成功，正在提交…', 'success');
+      tg.sendData(token);
+    }
+    function showStatus(msg, cls) {
+      const el = document.getElementById('status-msg');
+      el.textContent = msg;
+      el.className = 'status ' + cls;
+    }
+
+    if (!siteKey) {
+      showStatus('❌ 配置錯誤：缺少 site_key 參數', 'error');
+    } else if (type === 'turnstile') {
+      // ── Cloudflare Turnstile ──────────────────────────────────────
+      const s = document.createElement('script');
+      s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+      s.async = true; s.defer = true;
+      document.head.appendChild(s);
+
+      const w = document.getElementById('captcha-wrapper');
+      w.innerHTML = `<div class="cf-turnstile"
+        data-sitekey="${siteKey}"
+        data-theme="${tg.colorScheme === 'dark' ? 'dark' : 'light'}"
+        data-callback="onTurnstileSuccess"
+        data-expired-callback="onTurnstileExpired"
+        data-error-callback="onTurnstileError">
+      </div>`;
+
+      window.onTurnstileSuccess = onVerified;
+      window.onTurnstileExpired = () => showStatus('⚠️ 驗證已過期，請重試', 'warn');
+      window.onTurnstileError   = () => showStatus('❌ 驗證出錯，請重試', 'error');
+
+    } else {
+      // ── Google reCAPTCHA v2 ───────────────────────────────────────
+      const s = document.createElement('script');
+      s.src = 'https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit';
+      s.async = true; s.defer = true;
+      document.head.appendChild(s);
+
+      document.getElementById('captcha-wrapper').innerHTML = '<div id="recaptcha-widget"></div>';
+
+      let widgetId = null;
+      window.onRecaptchaLoad = () => {
+        widgetId = grecaptcha.render('recaptcha-widget', {
+          sitekey:           siteKey,
+          theme:             tg.colorScheme === 'dark' ? 'dark' : 'light',
+          callback:          onVerified,
+          'expired-callback': () => { showStatus('⚠️ 驗證已過期，請重試', 'warn'); grecaptcha.reset(widgetId); },
+          'error-callback':   () => showStatus('❌ 驗證出錯，請重試', 'error'),
+        });
+      };
+    }
+  </script>
+</body>
+</html>
