@@ -1,45 +1,40 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Admin — VerificationBot</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/admin/assets/style.css"/>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin Panel</title>
+<link rel="stylesheet" href="/admin/assets/style.css">
 </head>
 <body>
-<div class="layout">
-  <!-- Sidebar -->
-  <aside class="sidebar">
-    <div class="sidebar-brand">
-      <div class="sidebar-logo-placeholder" id="sb-logo">🤖</div>
-      <span class="sidebar-name" id="sb-name">Admin Panel</span>
-    </div>
-    <nav class="nav" id="nav">
-      <a class="nav-item" href="#dashboard" data-page="dashboard"><span class="icon">📊</span>儀表板</a>
-      <a class="nav-item" href="#logs" data-page="logs"><span class="icon">📋</span>操作記錄</a>
-      <a class="nav-item" href="#settings" data-page="settings"><span class="icon">⚙️</span>外觀設定</a>
-      <a class="nav-item superadmin-only" href="#users" data-page="users" style="display:none"><span class="icon">👥</span>帳號管理</a>
-    </nav>
-    <div class="sidebar-bottom">
-      <div class="user-chip">
-        <span>👤</span>
-        <span id="sb-user" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-        <span class="user-role" id="sb-role"></span>
-      </div>
-      <button class="btn btn-outline btn-sm" style="width:100%;margin-top:8px" onclick="logout()">登出</button>
-    </div>
-  </aside>
+<div id="sidebar">
+  <div class="brand">
+    <img id="brand-logo" src="" alt="" style="display:none;width:28px;height:28px;border-radius:6px;object-fit:cover">
+    <span id="brand-name">Admin</span>
+  </div>
+  <nav>
+    <a href="#" class="nav-item active" data-page="dashboard">
+      <span class="nav-icon">📊</span><span class="nav-label">儀表板</span>
+    </a>
+    <a href="#" class="nav-item" data-page="logs">
+      <span class="nav-icon">📋</span><span class="nav-label">操作記錄</span>
+    </a>
+    <a href="#" class="nav-item" data-page="settings">
+      <span class="nav-icon">⚙️</span><span class="nav-label">設定</span>
+    </a>
+    <a href="#" class="nav-item superadmin-only" data-page="users" style="display:none">
+      <span class="nav-icon">👥</span><span class="nav-label">帳號管理</span>
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <span id="user-badge"></span>
+    <button class="logout-btn" onclick="logout()">登出</button>
+  </div>
+</div>
 
-  <!-- Main -->
-  <div class="main">
-    <div class="topbar">
-      <span class="topbar-title" id="page-title">儀表板</span>
-    </div>
-    <div class="content" id="content">
-      <div class="empty">載入中…</div>
-    </div>
+<div id="main">
+  <div id="content">
+    <div class="spinner">載入中…</div>
   </div>
 </div>
 
