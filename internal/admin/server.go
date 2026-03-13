@@ -15,18 +15,19 @@ import (
 type Server struct {
 	db        *sql.DB
 	jwtSecret string
-	botToken  string // for Telegram initData verification
+	botToken  string
+	groups    []string // for group admin verification
 	adminUI   fs.FS
 	webApp    fs.FS
 }
 
-func NewServer(database *sql.DB, jwtSecret, botToken string, adminUI, webApp fs.FS) *Server {
-	return &Server{db: database, jwtSecret: jwtSecret, botToken: botToken, adminUI: adminUI, webApp: webApp}
+func NewServer(database *sql.DB, jwtSecret, botToken string, groups []string, adminUI, webApp fs.FS) *Server {
+	return &Server{db: database, jwtSecret: jwtSecret, botToken: botToken, groups: groups, adminUI: adminUI, webApp: webApp}
 }
 
 // Start runs the admin HTTP server. Blocks until ctx is cancelled.
-func Start(ctx context.Context, database *sql.DB, jwtSecret, botToken, host string, port int, adminUI, webApp fs.FS) {
-	s := NewServer(database, jwtSecret, botToken, adminUI, webApp)
+func Start(ctx context.Context, database *sql.DB, jwtSecret, botToken string, groups []string, host string, port int, adminUI, webApp fs.FS) {
+	s := NewServer(database, jwtSecret, botToken, groups, adminUI, webApp)
 	r := s.router()
 	addr := fmt.Sprintf("%s:%d", host, port)
 	srv := &http.Server{Addr: addr, Handler: r}

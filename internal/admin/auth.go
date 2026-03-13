@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -113,8 +115,8 @@ func (s *Server) parseToken(tokenStr string) (*Claims, error) {
 	return nil, jwt.ErrTokenInvalidClaims
 }
 
-// handleTelegramAuth verifies a Telegram Mini App initData payload and issues a JWT.
-// This is the endpoint called by the admin UI when opened as a Telegram Mini App via /admin command.
+// handleTelegramAuth verifies Telegram Mini App initData and checks if user is a group admin.
+// No password or DB account needed — group admin status = access.
 func (s *Server) handleTelegramAuth(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		InitData string `json:"init_data"`
@@ -125,16 +127,23 @@ func (s *Server) handleTelegramAuth(w http.ResponseWriter, r *http.Request) {
 	}
 	telegramID, ok := verifyTelegramInitData(body.InitData, s.botToken)
 	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid initData signature"})
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "initData 簽名無效"})
 		return
 	}
-	user, err := db.GetUserByTelegramID(s.db, telegramID)
-	if err != nil || user == nil {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Telegram 帳號尚未綁定管理員，請請管理員在後台帳號設定中綁定你的 Telegram ID"})
+
+	// Check group admin status via Telegram API
+	role := checkGroupAdminRole(s.botToken, s.groups, telegramID)
+	if role == "" {
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error": "🚫 你不是任何配置群組的管理員，無法訪問管理後台",
+		})
 		return
 	}
-	token, _ := s.issueToken(user.ID, user.Username, user.Role, 15*time.Minute)
-	refresh, _ := s.issueToken(user.ID, user.Username, user.Role, 7*24*time.Hour)
+
+	// Use Telegram user ID as the username in JWT (no DB account needed)
+	username := fmt.Sprintf("tg:%d", telegramID)
+	token, _ := s.issueToken(telegramID, username, role, 2*time.Hour)
+	refresh, _ := s.issueToken(telegramID, username, role, 7*24*time.Hour)
 	http.SetCookie(w, &http.Cookie{
 		Name: "refresh", Value: refresh,
 		Path:     "/admin/api/",
@@ -143,7 +152,39 @@ func (s *Server) handleTelegramAuth(w http.ResponseWriter, r *http.Request) {
 		Secure:   true,
 		MaxAge:   7 * 86400,
 	})
-	writeJSON(w, http.StatusOK, map[string]string{"token": token, "role": user.Role})
+	writeJSON(w, http.StatusOK, map[string]string{"token": token, "role": role})
+}
+
+// checkGroupAdminRole calls Telegram getChatMember for each group.
+// Returns "superadmin" (creator), "admin" (group admin), or "" (not an admin).
+func checkGroupAdminRole(botToken string, groups []string, userID int64) string {
+	result := ""
+	for _, group := range groups {
+		url := fmt.Sprintf("https://api.telegram.org/bot%s/getChatMember?chat_id=%s&user_id=%d",
+			botToken, group, userID)
+		resp, err := http.Get(url)
+		if err != nil {
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		var res struct {
+			OK     bool `json:"ok"`
+			Result struct {
+				Status string `json:"status"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(body, &res); err != nil || !res.OK {
+			continue
+		}
+		switch res.Result.Status {
+		case "creator":
+			return "superadmin" // highest rank, stop immediately
+		case "administrator":
+			result = "admin"
+		}
+	}
+	return result
 }
 
 // verifyTelegramInitData validates a Telegram Mini App initData string.
