@@ -52,7 +52,7 @@ func main() {
 	defer cancel()
 
 	// Admin dashboard runs in background
-	go admin.Start(ctx, database, cfg.JWTSecret, cfg.AdminHost, cfg.AdminPort, adminUI, webApp)
+	go admin.Start(ctx, database, cfg.JWTSecret, cfg.TelegramToken, cfg.AdminHost, cfg.AdminPort, adminUI, webApp)
 
 	// Bot runs in foreground (blocks until ctx cancelled)
 	bot.Start(ctx, database, cfg)

@@ -199,3 +199,21 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	db.DeleteUser(s.db, id)
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
 }
+
+func (s *Server) handleSetUserTelegram(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		TelegramID int64 `json:"telegram_id"` // 0 = unlink
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	if err := db.SetUserTelegramID(s.db, id, body.TelegramID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
+}
+

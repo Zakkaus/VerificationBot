@@ -34,11 +34,12 @@ type Config struct {
 	WebhookPath string
 
 	// Admin dashboard
-	AdminHost     string
-	AdminPort     int
-	JWTSecret     string
-	InitAdminUser string
-	InitAdminPass string
+	AdminHost      string
+	AdminPort      int
+	AdminPublicURL string // HTTPS URL of admin dashboard (for /admin Mini App command)
+	JWTSecret      string
+	InitAdminUser  string
+	InitAdminPass  string
 
 	// Database
 	DBPath string
@@ -69,6 +70,7 @@ func Load() *Config {
 
 	flag.StringVar(&cfg.AdminHost, "admin-host", env("ADMIN_HOST", "0.0.0.0"), "Admin server bind host")
 	flag.IntVar(&cfg.AdminPort, "admin-port", envInt("ADMIN_PORT", 8080), "Admin server port")
+	flag.StringVar(&cfg.AdminPublicURL, "admin-public-url", env("ADMIN_PUBLIC_URL", ""), "Public HTTPS URL of admin dashboard (for /admin command)")
 	flag.StringVar(&cfg.JWTSecret, "jwt-secret", env("JWT_SECRET", ""), "JWT signing secret (required)")
 	flag.StringVar(&cfg.InitAdminUser, "admin-user", env("ADMIN_USER", "admin"), "Initial superadmin username")
 	flag.StringVar(&cfg.InitAdminPass, "admin-pass", env("ADMIN_PASS", ""), "Initial superadmin password (required)")

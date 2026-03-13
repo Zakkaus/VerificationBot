@@ -8,11 +8,12 @@ import (
 )
 
 type AdminUser struct {
-	ID        int64
-	Username  string
-	Role      string
-	CreatedAt time.Time
-	LastLogin *time.Time
+	ID         int64
+	Username   string
+	Role       string
+	TelegramID int64
+	CreatedAt  time.Time
+	LastLogin  *time.Time
 }
 
 func EnsureInitialAdmin(d *sql.DB, username, password string) error {
@@ -58,7 +59,7 @@ func AuthenticateUser(d *sql.DB, username, password string) (*AdminUser, error) 
 
 func ListUsers(d *sql.DB) ([]AdminUser, error) {
 	rows, err := d.Query(
-		"SELECT id,username,role,created_at,last_login FROM admin_users ORDER BY id")
+		"SELECT id,username,role,telegram_id,created_at,last_login FROM admin_users ORDER BY id")
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +69,8 @@ func ListUsers(d *sql.DB) ([]AdminUser, error) {
 		u := AdminUser{}
 		var lastStr sql.NullString
 		var createdStr string
-		if err := rows.Scan(&u.ID, &u.Username, &u.Role, &createdStr, &lastStr); err != nil {
+		var tgID sql.NullInt64
+		if err := rows.Scan(&u.ID, &u.Username, &u.Role, &tgID, &createdStr, &lastStr); err != nil {
 			return nil, err
 		}
 		u.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdStr)
@@ -76,9 +78,45 @@ func ListUsers(d *sql.DB) ([]AdminUser, error) {
 			t, _ := time.Parse("2006-01-02 15:04:05", lastStr.String)
 			u.LastLogin = &t
 		}
+		if tgID.Valid {
+			u.TelegramID = tgID.Int64
+		}
 		users = append(users, u)
 	}
 	return users, nil
+}
+
+// GetUserByTelegramID looks up an admin user by their linked Telegram user ID.
+func GetUserByTelegramID(d *sql.DB, telegramID int64) (*AdminUser, error) {
+	u := &AdminUser{}
+	var lastStr sql.NullString
+	var createdStr string
+	err := d.QueryRow(
+		"SELECT id,username,role,telegram_id,created_at,last_login FROM admin_users WHERE telegram_id=?",
+		telegramID,
+	).Scan(&u.ID, &u.Username, &u.Role, &u.TelegramID, &createdStr, &lastStr)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	u.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdStr)
+	if lastStr.Valid {
+		t, _ := time.Parse("2006-01-02 15:04:05", lastStr.String)
+		u.LastLogin = &t
+	}
+	return u, nil
+}
+
+// SetUserTelegramID links (or unlinks) a Telegram user ID to an admin account.
+func SetUserTelegramID(d *sql.DB, adminUserID, telegramID int64) error {
+	var val any = telegramID
+	if telegramID == 0 {
+		val = nil // unlink
+	}
+	_, err := d.Exec("UPDATE admin_users SET telegram_id=? WHERE id=?", val, adminUserID)
+	return err
 }
 
 func CreateUser(d *sql.DB, username, password, role string) error {

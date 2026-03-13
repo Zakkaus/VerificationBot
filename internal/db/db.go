@@ -51,6 +51,16 @@ func Migrate(d *sql.DB) error {
 		return err
 	}
 
+	// Additive migrations (safe to re-run)
+	migrations := []string{
+		`ALTER TABLE admin_users ADD COLUMN telegram_id INTEGER UNIQUE`,
+	}
+	for _, m := range migrations {
+		d.Exec(m) // ignore "duplicate column" errors
+	}
+	d.Exec(`CREATE INDEX IF NOT EXISTS idx_users_tgid ON admin_users(telegram_id)`)
+
+
 	// Insert default appearance settings (ignore if already exist)
 	defaults := map[string]string{
 		"site_name":     "VerificationBot Admin",

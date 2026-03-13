@@ -34,7 +34,41 @@ async function logout() {
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 async function init() {
+  // ── Telegram Mini App auto-login ────────────────────────────────────────
+  const tg = window.Telegram?.WebApp;
+  if (tg && tg.initData && !token) {
+    tg.ready();
+    tg.expand();
+    try {
+      const res = await fetch(API + '/auth/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ init_data: tg.initData }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        token = d.token;
+        currentRole = d.role;
+        localStorage.setItem('token', token);
+        localStorage.setItem('role', currentRole);
+        // Continue to normal init below
+      } else {
+        const err = await res.json();
+        document.body.innerHTML = `<div style="padding:40px;color:#fff;font-family:sans-serif;text-align:center">
+          <div style="font-size:2rem">🚫</div>
+          <h2>${err.error || '無法登入'}</h2>
+          <p style="opacity:.6">請聯繫 superadmin 在後台帳號管理中綁定你的 Telegram ID</p>
+          <p style="opacity:.4;font-size:.85rem">如需直接登入：<a href="/admin/login" style="color:#2ea6ff">前往登入頁</a></p>
+        </div>`;
+        return;
+      }
+    } catch(e) {
+      // Not in Mini App or network error — fall through to normal login check
+    }
+  }
+  // ── Normal login check ──────────────────────────────────────────────────
   if (!token) { window.location = '/admin/login'; return; }
+
 
   // Load branding & user info in parallel
   const [meRes, settingsRes] = await Promise.all([

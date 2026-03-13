@@ -15,17 +15,18 @@ import (
 type Server struct {
 	db        *sql.DB
 	jwtSecret string
+	botToken  string // for Telegram initData verification
 	adminUI   fs.FS
 	webApp    fs.FS
 }
 
-func NewServer(database *sql.DB, jwtSecret string, adminUI, webApp fs.FS) *Server {
-	return &Server{db: database, jwtSecret: jwtSecret, adminUI: adminUI, webApp: webApp}
+func NewServer(database *sql.DB, jwtSecret, botToken string, adminUI, webApp fs.FS) *Server {
+	return &Server{db: database, jwtSecret: jwtSecret, botToken: botToken, adminUI: adminUI, webApp: webApp}
 }
 
 // Start runs the admin HTTP server. Blocks until ctx is cancelled.
-func Start(ctx context.Context, database *sql.DB, jwtSecret, host string, port int, adminUI, webApp fs.FS) {
-	s := NewServer(database, jwtSecret, adminUI, webApp)
+func Start(ctx context.Context, database *sql.DB, jwtSecret, botToken, host string, port int, adminUI, webApp fs.FS) {
+	s := NewServer(database, jwtSecret, botToken, adminUI, webApp)
 	r := s.router()
 	addr := fmt.Sprintf("%s:%d", host, port)
 	srv := &http.Server{Addr: addr, Handler: r}
@@ -67,9 +68,10 @@ func (s *Server) router() http.Handler {
 	})
 
 	// Public routes (no auth required)
-	r.Post("/admin/api/auth/login", s.handleLogin)
-	r.Post("/admin/api/auth/refresh", s.handleRefresh)
-	r.Post("/admin/api/auth/logout", s.handleLogout)
+	r.Post("/admin/api/auth/login",          s.handleLogin)
+	r.Post("/admin/api/auth/refresh",        s.handleRefresh)
+	r.Post("/admin/api/auth/logout",         s.handleLogout)
+	r.Post("/admin/api/auth/telegram",       s.handleTelegramAuth) // Mini App auto-login
 	// Public: branding settings needed by the login page
 	r.Get("/admin/api/settings", s.handleGetSettings)
 
@@ -90,6 +92,8 @@ func (s *Server) router() http.Handler {
 		r.With(requireRole("superadmin")).Post("/admin/api/users", s.handleCreateUser)
 		r.With(requireRole("superadmin")).Patch("/admin/api/users/{id}", s.handlePatchUser)
 		r.With(requireRole("superadmin")).Delete("/admin/api/users/{id}", s.handleDeleteUser)
+		// superadmin: link/unlink Telegram ID to admin account
+		r.With(requireRole("superadmin")).Patch("/admin/api/users/{id}/telegram", s.handleSetUserTelegram)
 	})
 
 	return r
