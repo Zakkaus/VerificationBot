@@ -50,8 +50,8 @@ func (s *Server) router() http.Handler {
 	// Static: Mini App
 	r.Handle("/webapp/*", http.StripPrefix("/webapp/", http.FileServer(http.FS(s.webApp))))
 
-	// Static: Admin UI assets
-	r.Handle("/admin/assets/*", http.StripPrefix("/admin/assets/", http.FileServer(http.FS(s.adminUI))))
+	// Static: Admin UI — strip /admin/ so FileServer sees assets/style.css which matches the FS
+	r.Handle("/admin/assets/*", http.StripPrefix("/admin/", http.FileServer(http.FS(s.adminUI))))
 
 	// Admin HTML pages
 	r.Get("/admin/login", func(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +82,7 @@ func (s *Server) router() http.Handler {
 
 		r.Get("/admin/api/auth/me", s.handleMe)
 		r.Get("/admin/api/stats", s.handleStats)
+		r.Get("/admin/api/bot-info", s.handleBotInfo)
 		r.Get("/admin/api/logs", s.handleGetLogs)
 		r.Get("/admin/api/logs/export", s.handleExportLogs)
 

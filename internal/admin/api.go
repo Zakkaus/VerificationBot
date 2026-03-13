@@ -39,6 +39,28 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
+// handleBotInfo returns the bot's admin status in each configured group.
+func (s *Server) handleBotInfo(w http.ResponseWriter, r *http.Request) {
+	claims := claimsFromCtx(r)
+	type GroupInfo struct {
+		GroupID  string `json:"group_id"`
+		Role     string `json:"role"`
+	}
+	var groupInfos []GroupInfo
+	for _, g := range s.groups {
+		role := checkGroupAdminRole(s.botToken, []string{g}, claims.UserID)
+		if role == "" {
+			role = "none"
+		}
+		groupInfos = append(groupInfos, GroupInfo{GroupID: g, Role: role})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"groups":       groupInfos,
+		"your_role":    checkGroupAdminRole(s.botToken, s.groups, claims.UserID),
+	})
+}
+
+
 // --- logs ---
 
 func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {

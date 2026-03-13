@@ -182,12 +182,28 @@ function navigate(page){
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 async function renderDashboard(el){
-  const res = await apiFetch('/stats');
-  if(!res || !res.ok){ el.innerHTML='<div class="spinner">載入失敗</div>'; return; }
-  const s = await res.json();
+  const [sRes, biRes] = await Promise.all([
+    apiFetch('/stats'),
+    apiFetch('/bot-info'),
+  ]);
+  if(!sRes || !sRes.ok){ el.innerHTML='<div class="spinner">載入失敗</div>'; return; }
+  const s = await sRes.json();
+  const bi = (biRes && biRes.ok) ? await biRes.json() : null;
 
   const total = (s.pass||0)+(s.fail||0)+(s.timeout||0)+(s.declined||0);
   const passRate = total>0 ? Math.round((s.pass||0)/total*100) : 0;
+
+  const roleIcon = {superadmin:'🔑',admin:'👤',none:'👁','':<span style="color:var(--muted)">—</span>};
+
+  const groupsHTML = bi && bi.groups && bi.groups.length ? `
+    <div class="page-title" style="font-size:1rem;margin-bottom:12px;margin-top:24px">🏘️ 監管群組</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>群組 ID</th><th>你的角色</th></tr></thead>
+      <tbody>${bi.groups.map(g=>`<tr>
+        <td><code style="font-size:.82rem;color:var(--muted)">${esc(g.group_id)}</code></td>
+        <td>${g.role==='superadmin'?'🔑 群主':g.role==='admin'?'👤 管理員':'— 無'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>` : '';
 
   el.innerHTML = `
     <div class="page-title">儀表板</div>
@@ -198,7 +214,8 @@ async function renderDashboard(el){
       <div class="stat-card"><div class="stat-label">拒絕</div><div class="stat-value" style="color:var(--red)">${s.declined||0}</div></div>
       <div class="stat-card"><div class="stat-label">通過率</div><div class="stat-value">${passRate}%</div></div>
     </div>
-    <div class="page-title" style="font-size:1rem;margin-bottom:12px">最新記錄</div>
+    ${groupsHTML}
+    <div class="page-title" style="font-size:1rem;margin-bottom:12px;margin-top:24px">最新記錄</div>
     <div id="recent-wrap"><div class="spinner">載入中…</div></div>`;
 
   const lr = await apiFetch('/logs?limit=10&offset=0');
@@ -206,6 +223,7 @@ async function renderDashboard(el){
   const {logs} = await lr.json();
   $('recent-wrap').innerHTML = logsTable(logs||[]);
 }
+
 
 // ── Logs ──────────────────────────────────────────────────────────────────────
 async function renderLogs(el){

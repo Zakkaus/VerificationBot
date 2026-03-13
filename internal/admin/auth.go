@@ -10,12 +10,14 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"verificationbot/internal/db"
 )
+
 
 type Claims struct {
 	UserID   int64  `json:"uid"`
@@ -157,35 +159,49 @@ func (s *Server) handleTelegramAuth(w http.ResponseWriter, r *http.Request) {
 
 // checkGroupAdminRole calls Telegram getChatMember for each group.
 // Returns "superadmin" (creator), "admin" (group admin), or "" (not an admin).
+// Tries multiple ID formats to handle regular/supergroup IDs.
 func checkGroupAdminRole(botToken string, groups []string, userID int64) string {
 	result := ""
 	for _, group := range groups {
-		url := fmt.Sprintf("https://api.telegram.org/bot%s/getChatMember?chat_id=%s&user_id=%d",
-			botToken, group, userID)
-		resp, err := http.Get(url)
-		if err != nil {
-			continue
+		// Build candidate chat_id strings to try (handle 2452654588 / -2452654588 / -1002452654588)
+		toTry := []string{group}
+		if id, err := strconv.ParseInt(strings.TrimPrefix(group, "@"), 10, 64); err == nil {
+			abs := id
+			if abs < 0 { abs = -abs }
+			absStr := strconv.FormatInt(abs, 10)
+			if strings.HasPrefix(absStr, "100") { absStr = absStr[3:] }
+			toTry = []string{
+				absStr,
+				"-" + absStr,
+				"-100" + absStr,
+			}
 		}
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		var res struct {
-			OK     bool `json:"ok"`
-			Result struct {
-				Status string `json:"status"`
-			} `json:"result"`
-		}
-		if err := json.Unmarshal(body, &res); err != nil || !res.OK {
-			continue
-		}
-		switch res.Result.Status {
-		case "creator":
-			return "superadmin" // highest rank, stop immediately
-		case "administrator":
-			result = "admin"
+		for _, cid := range toTry {
+			url := fmt.Sprintf("https://api.telegram.org/bot%s/getChatMember?chat_id=%s&user_id=%d",
+				botToken, cid, userID)
+			resp, err := http.Get(url) //nolint:noctx
+			if err != nil { continue }
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			var res struct {
+				OK     bool `json:"ok"`
+				Result struct {
+					Status string `json:"status"`
+				} `json:"result"`
+			}
+			if err := json.Unmarshal(body, &res); err != nil || !res.OK { continue }
+			switch res.Result.Status {
+			case "creator":
+				return "superadmin"
+			case "administrator":
+				result = "admin"
+			}
+			break // worked with this ID format, no need to try others
 		}
 	}
 	return result
 }
+
 
 // verifyTelegramInitData validates a Telegram Mini App initData string.
 // See: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
