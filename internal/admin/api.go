@@ -46,9 +46,24 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 		Limit:  intParam(r, "limit", 50),
 		Offset: intParam(r, "offset", 0),
 		Result: r.URL.Query().Get("result"),
+		Search: r.URL.Query().Get("search"),
 	}
 	if cid, err := strconv.ParseInt(r.URL.Query().Get("chat_id"), 10, 64); err == nil {
 		f.ChatID = cid
+	}
+	if uid, err := strconv.ParseInt(r.URL.Query().Get("user_id"), 10, 64); err == nil {
+		f.UserID = uid
+	}
+	if ds := r.URL.Query().Get("date_from"); ds != "" {
+		if t, err := time.Parse("2006-01-02", ds); err == nil {
+			f.StartTime = &t
+		}
+	}
+	if de := r.URL.Query().Get("date_to"); de != "" {
+		if t, err := time.Parse("2006-01-02", de); err == nil {
+			end := t.Add(24*time.Hour - time.Second)
+			f.EndTime = &end
+		}
 	}
 	logs, err := db.GetLogs(s.db, f)
 	if err != nil {
@@ -98,8 +113,11 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
-	// Only allow appearance keys (security-sensitive keys stay in env)
-	allowed := map[string]bool{"site_name": true, "site_logo": true, "primary_color": true}
+	// Allow appearance + captcha config keys
+	allowed := map[string]bool{
+		"site_name": true, "site_logo": true, "primary_color": true,
+		"captcha_type": true, "captcha_site_key": true, "captcha_secret": true,
+	}
 	filtered := make(map[string]string)
 	for k, v := range body {
 		if allowed[k] {

@@ -23,10 +23,13 @@ type LogFilter struct {
 	Limit     int
 	Offset    int
 	ChatID    int64
+	UserID    int64
 	Result    string
+	Search    string     // fuzzy: username, event_type, detail, chat_title
 	StartTime *time.Time
 	EndTime   *time.Time
 }
+
 
 func AddLog(d *sql.DB, l AuditLog) error {
 	_, err := d.Exec(
@@ -44,9 +47,18 @@ func buildLogWhere(f LogFilter) (string, []any) {
 		conds = append(conds, "chat_id = ?")
 		args = append(args, f.ChatID)
 	}
+	if f.UserID != 0 {
+		conds = append(conds, "user_id = ?")
+		args = append(args, f.UserID)
+	}
 	if f.Result != "" {
 		conds = append(conds, "result = ?")
 		args = append(args, f.Result)
+	}
+	if f.Search != "" {
+		like := "%" + f.Search + "%"
+		conds = append(conds, "(username LIKE ? OR event_type LIKE ? OR detail LIKE ? OR chat_title LIKE ?)")
+		args = append(args, like, like, like, like)
 	}
 	if f.StartTime != nil {
 		conds = append(conds, "ts >= ?")

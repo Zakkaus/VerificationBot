@@ -159,16 +159,17 @@ function statCard(label, value, color, icon) {
 
 // ── Logs ──────────────────────────────────────────────────────────────────────
 
-let logsState = { offset: 0, limit: 50, result: '', chat_id: '' };
+let logsState = { offset: 0, limit: 50, result: '', chat_id: '', search: '', user_id: '', date_from: '', date_to: '' };
 
 async function renderLogs(el) {
-  logsState = { offset: 0, limit: 50, result: '', chat_id: '' };
+  logsState = { offset: 0, limit: 50, result: '', chat_id: '', search: '', user_id: '', date_from: '', date_to: '' };
   el.innerHTML = `
     <div class="section-header">
       <span class="section-title">操作記錄</span>
       <button class="btn btn-outline btn-sm" onclick="exportLogs()">⬇ 匯出 CSV</button>
     </div>
-    <div class="filters">
+    <div class="filters" style="flex-wrap:wrap;gap:8px">
+      <input id="f-search" type="text" placeholder="🔍 搜尋用戶名/事件/詳情" style="min-width:200px" oninput="debounceSearch()" />
       <select id="f-result" onchange="fetchLogs()">
         <option value="">全部結果</option>
         <option value="pass">✅ 通過</option>
@@ -177,20 +178,47 @@ async function renderLogs(el) {
         <option value="fail">❌ 失敗</option>
         <option value="pending">⏳ 待驗證</option>
       </select>
-      <input id="f-chat" type="text" placeholder="群組 ID" style="width:140px" onchange="fetchLogs()"/>
+      <input id="f-uid" type="text" placeholder="User ID" style="width:120px" onchange="fetchLogs()"/>
+      <input id="f-chat" type="text" placeholder="群組 ID" style="width:120px" onchange="fetchLogs()"/>
+      <input id="f-from" type="date" onchange="fetchLogs()" title="開始日期"/>
+      <input id="f-to"   type="date" onchange="fetchLogs()" title="結束日期"/>
+      <button class="btn btn-outline btn-sm" onclick="clearLogFilters()">✕ 清除</button>
     </div>
     <div id="logs-wrap"></div>
     <div class="pagination" id="logs-pg"></div>`;
   await fetchLogs();
 }
 
-async function fetchLogs() {
-  logsState.result = document.getElementById('f-result')?.value || '';
-  logsState.chat_id = document.getElementById('f-chat')?.value || '';
-  const qs = new URLSearchParams({
-    limit: logsState.limit, offset: logsState.offset,
-    result: logsState.result, chat_id: logsState.chat_id,
+let _searchTimer = null;
+function debounceSearch() {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(fetchLogs, 400);
+}
+
+function clearLogFilters() {
+  ['f-search','f-result','f-uid','f-chat','f-from','f-to'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
   });
+  logsState.offset = 0;
+  fetchLogs();
+}
+
+async function fetchLogs() {
+  logsState.result   = document.getElementById('f-result')?.value || '';
+  logsState.chat_id  = document.getElementById('f-chat')?.value   || '';
+  logsState.search   = document.getElementById('f-search')?.value || '';
+  logsState.user_id  = document.getElementById('f-uid')?.value    || '';
+  logsState.date_from= document.getElementById('f-from')?.value   || '';
+  logsState.date_to  = document.getElementById('f-to')?.value     || '';
+  const qs = new URLSearchParams();
+  qs.set('limit', logsState.limit); qs.set('offset', logsState.offset);
+  if (logsState.result)    qs.set('result',    logsState.result);
+  if (logsState.chat_id)   qs.set('chat_id',   logsState.chat_id);
+  if (logsState.search)    qs.set('search',    logsState.search);
+  if (logsState.user_id)   qs.set('user_id',   logsState.user_id);
+  if (logsState.date_from) qs.set('date_from', logsState.date_from);
+  if (logsState.date_to)   qs.set('date_to',   logsState.date_to);
   const res = await apiFetch('/logs?' + qs);
   if (!res || !res.ok) return;
   const { logs, total } = await res.json();
@@ -250,46 +278,78 @@ async function renderSettings(el) {
   const res = await apiFetch('/settings');
   const s = res.ok ? await res.json() : {};
   const readonly = !['superadmin', 'admin'].includes(currentRole);
+  const dis = readonly ? 'readonly disabled' : '';
+  const captchaType = s.captcha_type || 'recaptcha';
 
   el.innerHTML = `
-    <div class="section-title" style="margin-bottom:24px">外觀設定</div>
-    <div class="card" style="max-width:520px">
+    <div class="section-title" style="margin-bottom:24px">設定</div>
+
+    <!-- Appearance -->
+    <div class="card" style="max-width:520px;margin-bottom:20px">
+      <div class="card-title">🎨 外觀設定</div>
       <div class="form-group">
         <label class="form-label">網站名稱</label>
-        <input class="form-control" id="s-name" value="${esc(s.site_name||'')}" ${readonly?'readonly disabled':''} placeholder="VerificationBot Admin"/>
+        <input class="form-control" id="s-name" value="${esc(s.site_name||'')}" ${dis} placeholder="VerificationBot Admin"/>
       </div>
       <div class="form-group">
         <label class="form-label">Logo URL</label>
-        <input class="form-control" id="s-logo" value="${esc(s.site_logo||'')}" ${readonly?'readonly disabled':''} placeholder="https://example.com/logo.png"/>
+        <input class="form-control" id="s-logo" value="${esc(s.site_logo||'')}" ${dis} placeholder="https://example.com/logo.png"/>
       </div>
       <div class="form-group">
         <label class="form-label">主色調</label>
         <div class="color-preview">
-          <input class="form-control" id="s-color" value="${esc(s.primary_color||'#2ea6ff')}" ${readonly?'readonly disabled':''} placeholder="#2ea6ff" style="flex:1" oninput="updateSwatch()"/>
+          <input class="form-control" id="s-color" value="${esc(s.primary_color||'#2ea6ff')}" ${dis} style="flex:1" oninput="updateSwatch()"/>
           <div class="color-swatch" id="color-swatch" style="background:${esc(s.primary_color||'#2ea6ff')}"></div>
         </div>
       </div>
-      ${readonly ? '<p style="color:var(--muted);font-size:.85rem">你的權限不允許修改設定。</p>'
-        : `<button class="btn btn-accent" onclick="saveSettings()">💾 儲存設定</button>`}
-      <p id="s-msg" style="margin-top:12px;font-size:.88rem;display:none"></p>
-    </div>`;
+    </div>
+
+    <!-- Captcha -->
+    <div class="card" style="max-width:520px;margin-bottom:20px">
+      <div class="card-title">🛡️ 人機驗證設定</div>
+      <p style="font-size:.82rem;color:var(--muted);margin-bottom:12px">在此修改後立即生效，無需重啟 Bot</p>
+      <div class="form-group">
+        <label class="form-label">驗證類型</label>
+        <select class="form-control" id="s-captcha-type" ${dis}>
+          <option value="turnstile" ${captchaType==='turnstile'?'selected':''}>Cloudflare Turnstile（推薦）</option>
+          <option value="recaptcha" ${captchaType==='recaptcha'?'selected':''}>Google reCAPTCHA v2</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Site Key（前端）</label>
+        <input class="form-control" id="s-captcha-site-key" value="${esc(s.captcha_site_key||'')}" ${dis} placeholder="0x4AAAAAAA... 或 6LeIxAcT..."/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Secret Key（後端驗證）</label>
+        <input class="form-control" id="s-captcha-secret" type="password" value="${esc(s.captcha_secret||'')}" ${dis} placeholder="••••••••"/>
+      </div>
+      ${readonly ? '' : '<small style="color:var(--muted)">⚠️ Secret Key 僅管理員可見，請勿外洩</small>'}
+    </div>
+
+    ${readonly ? '<p style="color:var(--muted);font-size:.85rem">你的權限不允許修改設定。</p>'
+      : `<button class="btn btn-accent" onclick="saveSettings()">💾 儲存全部設定</button>`}
+    <p id="s-msg" style="margin-top:12px;font-size:.88rem;display:none"></p>`;
 }
 
 function updateSwatch() {
-  const v = document.getElementById('s-color').value;
-  document.getElementById('color-swatch').style.background = v;
+  document.getElementById('color-swatch').style.background =
+    document.getElementById('s-color').value;
 }
 
 async function saveSettings() {
   const body = {
-    site_name: document.getElementById('s-name').value,
-    site_logo: document.getElementById('s-logo').value,
-    primary_color: document.getElementById('s-color').value,
+    site_name:        document.getElementById('s-name').value,
+    site_logo:        document.getElementById('s-logo').value,
+    primary_color:    document.getElementById('s-color').value,
+    captcha_type:     document.getElementById('s-captcha-type').value,
+    captcha_site_key: document.getElementById('s-captcha-site-key').value,
+    captcha_secret:   document.getElementById('s-captcha-secret').value,
   };
   const res = await apiFetch('/settings', { method: 'PATCH', body: JSON.stringify(body) });
   const msg = document.getElementById('s-msg');
   if (res && res.ok) {
-    msg.textContent = '✅ 儲存成功！頁面刷新後生效。'; msg.style.color = 'var(--green)';
+    msg.textContent = '✅ 儲存成功！外觀設定立即生效，驗證類型於下次驗證請求生效。';
+    msg.style.color = 'var(--green)';
     applyBranding(body);
   } else {
     msg.textContent = '❌ 儲存失敗，請重試。'; msg.style.color = 'var(--red)';
