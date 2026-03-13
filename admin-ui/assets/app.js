@@ -58,74 +58,90 @@ async function logout(){
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init(){
-  // 1. Telegram Mini App auto-login
-  const tg = window.Telegram?.WebApp;
-  if(tg && tg.initData && !token){
-    tg.ready(); tg.expand();
-    try{
-      const res = await fetch(API+'/auth/telegram',{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({init_data: tg.initData})
-      });
-      if(res.ok){
-        const d = await res.json();
-        token = d.token; role = d.role;
-        localStorage.setItem('token',token);
-        localStorage.setItem('role',role);
-      } else {
-        const err = await res.json();
-        $('content').innerHTML = `<div style="text-align:center;padding:60px 20px">
-          <div style="font-size:2.5rem;margin-bottom:12px">🚫</div>
-          <div style="font-size:1rem;color:#e4e4e7;margin-bottom:8px">${esc(err.error||'驗證失敗')}</div>
-          <div style="font-size:.82rem;color:#71717a">如需直接登入：<a href="/admin/login" style="color:#2563eb">登入頁面</a></div>
-        </div>`;
-        return;
-      }
-    } catch(e){ /* not in Mini App */ }
-  }
+  const content = $('content');
+  try {
+    // 1. Telegram Mini App: always try auto-login (even if we have a stale token)
+    const tg = window.Telegram?.WebApp;
+    if(tg && tg.initData){
+      tg.ready(); tg.expand();
+      try{
+        const res = await fetch(API+'/auth/telegram',{
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({init_data: tg.initData})
+        });
+        if(res.ok){
+          const d = await res.json();
+          token = d.token; role = d.role;
+          localStorage.setItem('token',token);
+          localStorage.setItem('role',role);
+        } else if(!token){
+          // Not a group admin and no fallback token
+          const err = await res.json().catch(()=>({}));
+          content.innerHTML = `<div style="text-align:center;padding:60px 20px">
+            <div style="font-size:2.5rem;margin-bottom:12px">🚫</div>
+            <div style="color:#e4e4e7;margin-bottom:8px">${esc(err.error||'驗證失敗')}</div>
+            <div style="font-size:.82rem;color:#71717a">如需直接登入：<a href="/admin/login" style="color:#2563eb">登入頁面</a></div>
+          </div>`;
+          return;
+        }
+        // else: auto-login failed but we still have a stored token — try it
+      } catch(e){ /* network error, try stored token */ }
+    }
 
-  // 2. Redirect to login if no token
-  if(!token){ window.location='/admin/login'; return; }
+    // 2. No token at all → login page
+    if(!token){ window.location='/admin/login'; return; }
 
-  // 3. Load branding + user info
-  try{
+    // 3. Load me + settings (validate token)
     const [meRes, settingsRes] = await Promise.all([
       apiFetch('/auth/me'),
       apiFetch('/settings')
     ]);
-    if(!meRes){ return; } // 401 handled already
+
+    if(!meRes){
+      // apiFetch returned null = 401 + refresh failed → try Mini App re-auth
+      const tg2 = window.Telegram?.WebApp;
+      if(tg2 && tg2.initData){
+        // Clear stale token and reload to re-trigger auto-login
+        localStorage.removeItem('token'); localStorage.removeItem('role');
+        window.location.reload(); return;
+      }
+      return; // doLogout() was called
+    }
+
     const me = await meRes.json();
-    role = me.role;
-    localStorage.setItem('role', role);
+    role = me.role; localStorage.setItem('role', role);
     $('user-badge').textContent = me.username + ' · ' + role;
 
     if(settingsRes && settingsRes.ok){
       const s = await settingsRes.json();
       applyBranding(s);
     }
-  } catch(e){
-    console.error('init error', e);
-  }
 
-  // 4. Show/hide superadmin-only items
-  if(role === 'superadmin'){
-    document.querySelectorAll('.superadmin-only').forEach(el => el.style.display='');
-  }
+    // 4. Show/hide superadmin items
+    if(role === 'superadmin'){
+      document.querySelectorAll('.superadmin-only').forEach(el => el.style.display='');
+    }
 
-  // 5. Wire nav
-  document.querySelectorAll('.nav-item').forEach(el => {
-    el.addEventListener('click', e => {
-      e.preventDefault();
-      navigate(el.dataset.page);
+    // 5. Wire nav
+    document.querySelectorAll('.nav-item').forEach(el => {
+      el.addEventListener('click', e => { e.preventDefault(); navigate(el.dataset.page); });
     });
-  });
 
-  // 6. Mobile nav
-  const mobileNav = buildMobileNav();
-  document.body.appendChild(mobileNav);
+    // 6. Mobile nav
+    document.body.appendChild(buildMobileNav());
 
-  // 7. Show dashboard
-  navigate('dashboard');
+    // 7. Show dashboard
+    navigate('dashboard');
+
+  } catch(e) {
+    console.error('init error', e);
+    $('content').innerHTML = `<div style="text-align:center;padding:60px 20px">
+      <div style="font-size:2.5rem;margin-bottom:12px">⚠️</div>
+      <div style="color:#e4e4e7;margin-bottom:8px">載入失敗：${esc(String(e))}</div>
+      <button onclick="location.reload()" style="margin-top:12px;background:#27272a;border:1px solid #3f3f46;color:#e4e4e7;border-radius:8px;padding:8px 16px;cursor:pointer">重試</button>
+      <div style="margin-top:8px"><a href="/admin/login" style="font-size:.82rem;color:#71717a">切換到登入頁</a></div>
+    </div>`;
+  }
 }
 
 function applyBranding(s){
