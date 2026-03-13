@@ -1,268 +1,272 @@
 # VerificationBot
 
-Telegram 群組驗證 Bot — **Go 語言**，支援 **Google reCAPTCHA v2** 與 **Cloudflare Turnstile** 🛡️
-
-> Built with [Antigravity](https://github.com/google-deepmind) (Google Deepmind AI assistant)
+> 基於 **Telegram** 的入群驗證機器人（Go 語言）  
+> 支援 Cloudflare Turnstile / Google reCAPTCHA v2  
+> 管理後台透過 **Telegram Mini App** 一鍵進入，群管理員自動獲得權限  
+> 全程使用 [Claude](https://claude.ai) 4.6 Sonnet 協助開發
 
 ---
 
-## 功能
+## 目錄
+
+- [功能特色](#功能特色)
+- [Telegram Bot 命令](#telegram-bot-命令)
+- [快速開始（Docker）](#快速開始docker)
+- [Docker Compose + Cloudflare Tunnel](#docker-compose--cloudflare-tunnel)
+- [環境變數說明](#環境變數說明)
+- [管理後台](#管理後台)
+- [NixOS 部署](#nixos-部署)
+- [本地開發](#本地開發)
+
+---
+
+## 功能特色
 
 | 功能 | 說明 |
 |------|------|
-| Approve 模式 | 申請入群 → Bot 私訊 → Mini App 驗證 → 批准 |
-| 傳統模式 | 入群後禁言 → 完成驗證 → 恢復權限 |
-| Cloudflare Turnstile / reCAPTCHA | 兩種人機驗證，後台可動態切換 |
-| 管理後台 | 操作記錄查詢、外觀設定、RBAC 帳號管理 |
-| Cloudflare Tunnel | 管理後台零端口暴露安全訪問 |
-| 多架構 Docker | `linux/amd64` + `linux/arm64`，單一二進位映像 |
+| 🛡️ 人機驗證 | reCAPTCHA v2 / Cloudflare Turnstile |
+| ✅ Approve 模式 | 先審核申請，驗證通過後才放行 |
+| 🔇 禁言模式 | 進群後靜音，驗證通過才解除 |
+| 🚫 封禁 | 驗證失敗可踢出並刪所有消息 |
+| 🎛️ Mini App 後台 | 群管理員私訊 `/admin` 直接進入後台 |
+| 📊 操作記錄 | 驗證日誌、搜尋、CSV 匯出 |
+| 🌐 Cloudflare Tunnel | 無需開放端口，安全暴露後台 |
+| 🏗️ 多架構 Docker | amd64 + arm64 |
 
 ---
 
-## 🐳 Docker 部署（推薦，包含 NixOS）
+## Telegram Bot 命令
 
-### 前置條件
+| 命令 | 說明 |
+|------|------|
+| `/start` | 查看幫助 |
+| `/ping` | 確認 Bot 在線 |
+| `/version` | 查看版本與模式 |
+| `/admin` | 🎛️ 群管理員：開啟管理後台（Mini App） |
 
-```bash
-# 任何系統安裝 Docker
-curl -fsSL https://get.docker.com | sh
+### `/admin` 運作原理
 
-# NixOS 則在 configuration.nix 加入：
-# virtualisation.docker.enable = true;
-# virtualisation.docker.autoPrune.enable = true;
-# then: sudo nixos-rebuild switch
-```
+1. 在機器人**私訊**發送 `/admin`
+2. Bot 呼叫 Telegram API 確認你是配置群組的管理員（`creator` 或 `administrator`）
+3. 傳送帶有「🎛️ 開啟管理後台」按鈕的訊息
+4. 點擊 → Telegram Mini App 自動登入（無需密碼）
 
----
-
-### Step 1 — 設定精靈（自動生成 .env）
-
-```bash
-git clone https://github.com/Zakkaus/VerificationBot.git
-cd VerificationBot
-
-# 需要 Go（只跑一次，也可手動複製 .env.example）
-go run ./cmd/setup
-```
-
-設定精靈會自動偵測你的系統（NixOS / Linux / macOS），逐步詢問並生成 `.env` 文件。
-
-或者手動複製範本：
-
-```bash
-cp .env.example .env
-nano .env   # 填入以下必填項目
-```
+> `creator` = superadmin，`administrator` = admin
 
 ---
 
-### Step 2 — 填寫 .env
+## 快速開始（Docker）
+
+### 1. 建立 `.env`
 
 ```env
-# ── 必填 ──────────────────────────────────────
-TELEGRAM_TOKEN=1234567890:AAG...         # 從 @BotFather 取得
-WEBAPP_URL=https://your-domain.com/webapp/
-
-# ── 人機驗證（擇一）──────────────────────────
-CAPTCHA_TYPE=turnstile                   # 或 recaptcha
-CAPTCHA_SITE_KEY=0x4AAAAAAA...
-CAPTCHA_SECRET=0x4AAAAAAA...
-
-# ── 管理後台 ──────────────────────────────────
-ADMIN_HOST=0.0.0.0
-ADMIN_PORT=8080
-JWT_SECRET=至少32字元的隨機字串請用openssl生成
-ADMIN_USER=admin
-ADMIN_PASS=你的管理員密碼
-
-# ── 資料庫 ────────────────────────────────────
+TELEGRAM_TOKEN=1234567890:AAAXXX...
+CAPTCHA_TYPE=turnstile          # 或 recaptcha
+CAPTCHA_SITE_KEY=0x4AAAA...
+CAPTCHA_SECRET=0x4SSSS...
+WEBAPP_URL=https://bot.example.com/webapp/
+ADMIN_PUBLIC_URL=https://bot.example.com
+JWT_SECRET=your-strong-random-secret
+ADMIN_PASS=your-admin-password
+GROUPS=2452654588               # 群組 ID（不需要 - 前綴）
+APPROVE_MODE=true
 DB_PATH=/data/bot.db
-
-# ── Webhook（比 Polling 延遲更低，需要域名）──
-SERVER_HOST=your-domain.com
-SERVER_PORT=8443
-WEBHOOK_PATH=/webhook
-
-# ── Cloudflare Tunnel（管理後台用，見 Step 4）─
-# TUNNEL_TOKEN=eyJhIjoi...
 ```
 
-生成隨機 JWT_SECRET：
+> ℹ️ `GROUPS` 支援任意格式：`2452654588`、`-2452654588`、`-1002452654588` 均可
+
+### 2. 執行
+
 ```bash
-openssl rand -hex 32
+docker run -d \
+  --name verificationbot \
+  --env-file .env \
+  -v ./data:/data \
+  ghcr.io/zakkaus/verificationbot:latest
 ```
 
 ---
 
-### Step 3 — 啟動（Polling 模式，快速測試）
+## Docker Compose + Cloudflare Tunnel
+
+這是**推薦的生產部署方式**，透過 Cloudflare Tunnel 暴露 Mini App 和後台，無需開 80/443。
+
+### 1. 取得 Cloudflare Tunnel Token
+
+[Cloudflare Zero Trust](https://one.dash.cloudflare.com/) → Networks → Tunnels → Create Tunnel
+
+Tunnel 設定（Public Hostname）：
+| Subdomain | Service |
+|-----------|---------|
+| `bot.example.com` | `http://bot:8080` |
+
+### 2. `docker-compose.yml`
+
+```yaml
+services:
+  bot:
+    image: ghcr.io/zakkaus/verificationbot:latest
+    env_file: .env
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      - bot
+    restart: unless-stopped
+```
+
+### 3. `.env` 追加
+
+```env
+TUNNEL_TOKEN=eyJhI...（Cloudflare Tunnel Token）
+```
+
+### 4. 啟動
 
 ```bash
-docker compose up -d bot
-docker compose logs -f bot
-```
-
-期望看到：
-```
-Authorised as @your_bot
-Polling mode
-Admin dashboard listening on http://0.0.0.0:8080/admin/
-Bot is running
-```
-
-管理後台：`http://你的伺服器IP:8080/admin/`
-
----
-
-### Step 4 — Cloudflare Tunnel（管理後台安全訪問 ✅ 推薦）
-
-不需要開放任何端口，管理後台通過 Cloudflare 的加密隧道訪問。
-
-```bash
-# 安裝 cloudflared
-# Linux/NixOS:
-curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
-chmod +x cloudflared && sudo mv cloudflared /usr/local/bin/
-
-# 1. 登入 Cloudflare
-cloudflared tunnel login
-
-# 2. 建立 Tunnel
-cloudflared tunnel create verificationbot
-
-# 3. 取得 Token（貼到 .env 的 TUNNEL_TOKEN）
-cloudflared tunnel token verificationbot
-
-# 4. 在 Cloudflare Dashboard 設定路由：
-#    Tunnel → verificationbot → Public Hostnames
-#    Hostname: admin.your-domain.com → http://bot:8080
-
-# 5. 啟動含 Tunnel 的完整服務
 docker compose up -d
 ```
 
-管理後台：`https://admin.your-domain.com/admin/` 🔒（直接在瀏覽器打開，無需 SSH）
+---
+
+## 環境變數說明
+
+| 變數 | 必填 | 預設值 | 說明 |
+|------|------|--------|------|
+| `TELEGRAM_TOKEN` | ✅ | — | Bot Token |
+| `CAPTCHA_TYPE` | — | `recaptcha` | `recaptcha` 或 `turnstile` |
+| `CAPTCHA_SITE_KEY` | ✅ | — | 前端 Site Key |
+| `CAPTCHA_SECRET` | ✅ | — | 後端 Secret |
+| `WEBAPP_URL` | ✅ | — | Mini App 的 HTTPS URL（結尾含 `/`） |
+| `ADMIN_PUBLIC_URL` | ✅ | — | 後台的 HTTPS URL（用於 `/admin` 指令） |
+| `JWT_SECRET` | ✅ | — | JWT 簽名密鑰（隨機字串） |
+| `ADMIN_PASS` | ✅ | — | 後台初始密碼（帳號為 `admin`） |
+| `GROUPS` | — | 全部 | 逗號分隔的群組 ID 或用戶名 |
+| `APPROVE_MODE` | — | `true` | `true`=申請制，`false`=直接進群後驗證 |
+| `BAN` | — | `false` | 驗證失敗是否封禁 |
+| `BAN_TIME` | — | `0` | 封禁秒數（0=永久） |
+| `SHUTUP` | — | `true` | 驗證前禁言 |
+| `TEST_TIME` | — | `120` | 驗證超時秒數 |
+| `ADMIN_HOST` | — | `0.0.0.0` | 後台監聽 IP |
+| `ADMIN_PORT` | — | `8080` | 後台監聽端口 |
+| `DB_PATH` | — | `/data/bot.db` | SQLite 資料庫路徑 |
+| `TUNNEL_TOKEN` | — | — | Cloudflare Tunnel Token |
+| `PROXY` | — | — | HTTP/SOCKS5 代理 |
 
 ---
 
-### Step 5 — Webhook 模式（更低延遲）
+## 管理後台
 
-Webhook 模式需要 HTTPS，用 Nginx + Let's Encrypt 或直接用 Cloudflare Tunnel：
+後台位於 `https://your-domain.com/admin/`
 
-**方案 A：Nginx + Certbot**
+### 登入方式
 
-```bash
-sudo apt install nginx certbot python3-certbot-nginx
-sudo certbot --nginx -d your-domain.com
+**方法一（推薦）：Telegram Mini App 自動登入**
 
-sudo nano /etc/nginx/sites-available/verificationbot
+1. 機器人私訊 `/admin`
+2. 點擊「🎛️ 開啟管理後台」
+3. 自動登入，群管理員完全不需要密碼
+
+**方法二：帳號密碼**
+
+訪問 `https://your-domain.com/admin/login`
+- 帳號：`admin`（可改）
+- 密碼：`ADMIN_PASS` 環境變數
+
+### 後台功能
+
+| 頁面 | 功能 |
+|------|------|
+| 📊 儀表板 | 今日驗證統計、監管群組狀態、最近記錄 |
+| 📋 操作記錄 | 搜尋/篩選/日期範圍/匯出 CSV |
+| ⚙️ 設定 | 網站名稱/Logo/主色/驗證類型/API Key |
+| 👥 帳號管理 | 新增/刪除管理員（超管限定） |
+
+---
+
+## 驗證流程
+
+### Approve 模式（推薦）
+
+```
+用戶申請加入群組
+    ↓
+Bot 私訊：驗證鍵盤（立即顯示，無需點擊連結）
+    ↓
+用戶點擊「點擊驗證 ✅」→ 開啟 Captcha Mini App
+    ↓
+完成驗證 → Bot 自動批准申請 → 用戶進群
 ```
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name your-domain.com;
-    # SSL 由 Certbot 自動管理
+### 直接進群模式
 
-    location /webhook {
-        proxy_pass http://127.0.0.1:8443;
-        proxy_set_header Host $host;
-    }
-    location /webapp/ {
-        proxy_pass http://127.0.0.1:8080/webapp/;
-        proxy_set_header Host $host;
-        add_header Cache-Control "public, max-age=3600";
-    }
-}
+```
+用戶加入群組 → 群內提示 → callback 按鈕跳轉 Bot → 完成驗證
 ```
 
-```bash
-sudo ln -s /etc/nginx/sites-available/verificationbot /etc/nginx/sites-enabled/
-sudo nginx -s reload
+---
 
-# 啟動
+## NixOS 部署
+
+NixOS 推薦透過 Docker 部署：
+
+```bash
+# 安裝 Docker
+nix-env -iA nixpkgs.docker
+systemctl enable --now docker
+
+# 使用 docker compose
+git clone https://github.com/Zakkaus/VerificationBot
+cd VerificationBot
+cp .env.example .env
+# 編輯 .env ...
 docker compose up -d
 ```
 
-**方案 B：直接用 Cloudflare Tunnel 代理 Webhook**
-
-```bash
-# 在 Cloudflare Tunnel → Public Hostnames 加：
-# your-domain.com /webhook → http://bot:8443
-# your-domain.com /webapp/ → http://bot:8080
-
-# .env 設定（無需 Nginx）
-SERVER_HOST=your-domain.com
-SERVER_PORT=443
-```
+詳細 NixOS 模組設定見 [`deploy/nixos.nix`](deploy/nixos.nix)。
 
 ---
 
-### Step 6 — NixOS 完整部署
+## 本地開發
 
-NixOS 使用 Docker Compose（最簡單的方式）：
-
-```bash
-# 1. 啟用 Docker
-sudo nano /etc/nixos/configuration.nix
-```
-
-```nix
-{
-  virtualisation.docker.enable = true;
-  virtualisation.docker.autoPrune.enable = true;
-
-  # 開放防火牆（Webhook 用，Tunnel 方案不需要）
-  networking.firewall.allowedTCPPorts = [ 80 443 ];
-}
-```
+**需求：** Go 1.22+，ngrok 或 localtunnel（用於 HTTPS）
 
 ```bash
-sudo nixos-rebuild switch
+git clone https://github.com/Zakkaus/VerificationBot
+cd VerificationBot
 
-# 2. 部署
-mkdir -p /opt/verificationbot
-cd /opt/verificationbot
-git clone https://github.com/Zakkaus/VerificationBot.git .
-go run ./cmd/setup  # 或手動填寫 .env
+# 啟動 localtunnel 暴露 8080
+npx localtunnel --port 8080 &
 
-# 3. 啟動
-docker compose up -d
-journalctl -u docker -f  # 查看 log
+# 複製環境變數模板
+cp .env.example .env
+# 編輯 .env 填入 Token / Captcha Key 等
 
-# 或用 Docker 自帶指令
-docker compose logs -f
+# 編譯並啟動
+go build -o bot .
+./bot \
+  --telegram-token "YOUR_TOKEN" \
+  --captcha-type recaptcha \
+  --captcha-site-key "YOUR_SITE_KEY" \
+  --captcha-secret "YOUR_SECRET" \
+  --webapp-url "https://xxx.loca.lt/webapp/" \
+  --admin-public-url "https://xxx.loca.lt" \
+  --jwt-secret "dev-secret-xyz" \
+  --admin-pass "admin123" \
+  --groups "YOUR_GROUP_ID" \
+  --approve-mode \
+  --admin-host "127.0.0.1"
 ```
 
----
-
-### 常用維運指令
+### 多架構 Docker 構建
 
 ```bash
-# 查看運行狀態
-docker compose ps
-
-# 查看即時 log
-docker compose logs -f bot
-
-# 重啟 bot
-docker compose restart bot
-
-# 更新到最新版
-docker compose pull && docker compose up -d
-
-# 備份資料庫
-docker compose exec bot cp /data/bot.db /data/bot.bak.db
-
-# 完全停止
-docker compose down
-```
-
----
-
-## 🏗️ 多架構 Docker Build
-
-```bash
-# 建立並推送 amd64 + arm64 映像
 docker buildx create --use
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
@@ -272,66 +276,14 @@ docker buildx build \
 
 ---
 
-## ⚙️ 設定精靈
+## 人機驗證選擇
 
-```bash
-go run ./cmd/setup
-```
+| | Cloudflare Turnstile | Google reCAPTCHA v2 |
+|--|--|--|
+| 用戶體驗 | ✅ 無感驗證 | ⚠️ 需完整點擊 |
+| 免費配額 | ✅ 無限制 | ✅ 有限額 |
+| 推薦程度 | ⭐⭐⭐ 推薦 | ⭐⭐ 備用 |
 
-自動偵測系統（NixOS / Linux / macOS），逐步詢問所有參數並生成 `.env`，最後給出針對你的系統的部署建議。
-
----
-
-## 🛡️ Cloudflare Turnstile 設定
-
-1. 前往 [Cloudflare Dashboard → Turnstile](https://dash.cloudflare.com/?to=/:account/turnstile)
-2. **Add Site** → Widget type 選 **Managed**（推薦）或 **Invisible**
-3. 允許域名填寫你的域名
-4. 複製 **Site Key** 和 **Secret Key**
-
-```env
-CAPTCHA_TYPE=turnstile
-CAPTCHA_SITE_KEY=0x4AAAAAAA...
-CAPTCHA_SECRET=0x4AAAAAAA...
-```
-
-> 也可在管理後台 → **設定** → **人機驗證設定** 動態切換，無需重啟 Bot。
-
----
-
-## 管理後台
-
-| 頁面 | 功能 | 最低權限 |
-|------|------|----------|
-| 儀表板 | 今日統計、最新記錄 | viewer |
-| 操作記錄 | 搜尋（用戶名/日期/事件）、匯出 CSV | viewer |
-| 設定 | 外觀、人機驗證 Key 動態切換 | admin |
-| 帳號管理 | 新增/刪除管理員 | superadmin |
-
----
-
-## 完整參數列表
-
-| 環境變數 | 說明 | 預設 |
-|---|---|---|
-| `TELEGRAM_TOKEN` | Bot Token（必填） | — |
-| `CAPTCHA_TYPE` | `turnstile` 或 `recaptcha` | `recaptcha` |
-| `CAPTCHA_SECRET` | 後端驗證 Secret（必填） | — |
-| `CAPTCHA_SITE_KEY` | 前端 Site Key（必填） | — |
-| `WEBAPP_URL` | Mini App HTTPS URL（必填） | — |
-| `APPROVE_MODE` | Approve 模式 | `true` |
-| `BAN` | 超時後封禁 | `false` |
-| `BAN_TIME` | 臨時封禁秒數（0=永久） | `0` |
-| `SHUTUP` | 入群後禁言（傳統模式） | `true` |
-| `TEST_TIME` | 驗證超時秒數 | `120` |
-| `GROUPS` | 群組白名單（逗號分隔） | 全部 |
-| `SERVER_HOST` | Webhook 域名（空=Polling） | 空 |
-| `SERVER_PORT` | Webhook 端口（443/8443） | `0` |
-| `ADMIN_HOST` | 管理後台綁定 Host | `0.0.0.0` |
-| `ADMIN_PORT` | 管理後台端口 | `8080` |
-| `JWT_SECRET` | JWT 密鑰（必填） | — |
-| `ADMIN_USER` | 初始管理員帳號 | `admin` |
-| `ADMIN_PASS` | 初始管理員密碼（必填） | — |
-| `DB_PATH` | SQLite 資料庫路徑 | `bot.db` |
-| `TUNNEL_TOKEN` | Cloudflare Tunnel Token | 空 |
-| `PROXY` | HTTP/SOCKS5 代理 URL | 空 |
+申請地址：
+- Turnstile：[dash.cloudflare.com](https://dash.cloudflare.com/?to=/:account/turnstile)
+- reCAPTCHA：[google.com/recaptcha](https://www.google.com/recaptcha/admin)
